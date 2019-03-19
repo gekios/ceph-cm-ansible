@@ -2,7 +2,6 @@ server {
     listen 80;
 
     location = /update {
-        include proxy_params;
         proxy_pass http://localhost:{{ nsupdate_web_port }};
     }
 }

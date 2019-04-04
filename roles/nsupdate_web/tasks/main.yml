@@ -103,7 +103,7 @@
 - name: Enable our nginx configuration
   file:
     src: "{{ nginx_available }}/nsupdate_web"
-    dest: "{{ nginx_enabled }}/nsupdate_web"
+    dest: "{{ nginx_enabled }}/nsupdate_web.conf"
     state: link
 
 - name: Enable and restart nginx

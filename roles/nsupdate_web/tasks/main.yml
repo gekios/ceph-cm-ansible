@@ -1,27 +1,15 @@
 ---
-- name: Build args to pass to nsupdate_web
-  set_fact:
-    nsupdate_web_args: "--ttl {{ nsupdate_web_ttl }} -d {{ lab_domain }} -K {{ keys_dir }}/{{ pubkey_name }} -s {{ nsupdate_web_server }}{% if allow_hosts %} -a {{ allow_hosts }}{% endif %}"
-
-- name: Including major version specific variables.
-  include_vars: "{{ item }}"
-  with_first_found:
-    - "{{ ansible_distribution | lower | replace(' ', '_') }}_{{ ansible_distribution_major_version }}.yml"
-    - empty.yml
-
-- name: Install packages
-  package:
-    name: "{{ item }}"
-    state: latest
-  with_items: "{{ packages }}"
-
 - name: Create nsupdate group
+  tags:
+    - nsupdate
   group:
     name: "{{ nsupdate_web_user }}"
     state: present
     system: true
 
 - name: Create nsupdate user
+  tags:
+    - nsupdate
   user:
     name: "{{ nsupdate_web_user }}"
     group: "{{ nsupdate_web_user }}"
@@ -29,15 +17,47 @@
     system: true
     shell: "/bin/false"
 
-- name: Make sure keys_dir exists
-  file:
-    path: "{{ keys_dir }}"
-    state: directory
-    owner: "{{ nsupdate_web_user }}"
-    group: "{{ nsupdate_web_user }}"
-  when: "'{{ secrets_path }}/{{ pubkey_name }}' is file"
+- name: generate dnssec key
+  import_tasks: dnssec-keygen.yml
+  tags:
+    - dnssec-keygen
+    - nsupdate
+
+- name: Build args to pass to nsupdate_web
+  tags:
+    - nsupdate
+  set_fact:
+    nsupdate_web_args: "--ttl {{ nsupdate_web_ttl }} -d {{ lab_domain }} -K {{ keys_dir }}/{{ pubkey_name }} -s {{ nsupdate_web_server }}{% if allow_hosts %} -a {{ allow_hosts }}{% endif %}"
+
+- name: Including major version specific variables.
+  tags:
+    - nsupdate
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_distribution | lower | replace(' ', '_') }}_{{ ansible_distribution_major_version }}.yml"
+    - empty.yml
+
+- name: Install packages
+  tags:
+    - nsupdate
+  package:
+    name: "{{ item }}"
+    state: latest
+  with_items: "{{ packages }}"
+
+    #- name: Make sure keys_dir exists
+    #  file:
+    #    path: "{{ keys_dir }}"
+    #    state: directory
+    #    owner: "{{ nsupdate_web_user }}"
+    #    group: "{{ nsupdate_web_user }}"
+    #  when: "'{{ secrets_path }}/{{ pubkey_name }}' is file"
+    #  tags:
+    #    - nsupdate
 
 - name: Copy .key and .private keys to keys_dir
+  tags:
+    - nsupdate
   copy:
     src: "{{ item }}"
     dest: "{{ keys_dir }}/"
@@ -48,6 +68,8 @@
   when: "'{{ secrets_path }}/{{ pubkey_name }}' is file"
 
 - name: Clone nsupdate_web repo
+  tags:
+    - nsupdate
   git:
     repo: "{{ nsupdate_web_repo }}"
     dest: "{{ nsupdate_web_path }}"
@@ -55,6 +77,8 @@
   become_user: "{{ nsupdate_web_user }}"
 
 - name: Create/update virtualenv
+  tags:
+    - nsupdate
   pip:
     name: pip
     virtualenv_python: "{{ python_version }}"
@@ -62,6 +86,8 @@
   become_user: "{{ nsupdate_web_user }}"
 
 - name: Set up nsupdate_web
+  tags:
+    - nsupdate
   shell: "source {{ virtualenv_path }}/bin/activate && python setup.py develop"
   args:
     chdir: "{{ nsupdate_web_path }}"
@@ -69,6 +95,8 @@
   become_user: "{{ nsupdate_web_user }}"
 
 - name: Ship systemd service
+  tags:
+    - nsupdate
   template:
     src: nsupdate-web.service
     dest: "/etc/systemd/system/"
@@ -78,6 +106,8 @@
   register: ship_service
 
 - name: Reload systemd and enable/restart service
+  tags:
+    - nsupdate
   # We use the systemd module here so we can use the daemon_reload feature,
   # since we're shipping the .service file ourselves
   systemd:
@@ -88,6 +118,8 @@
   when: ship_service is changed
 
 - name: Ship nginx configuration
+  tags:
+    - nsupdate
   template:
     src: nsupdate_web_nginx
     dest: "{{ nginx_available }}/nsupdate_web"
@@ -96,17 +128,23 @@
     mode: 0644
 
 - name: Disable default nginx configuration
+  tags:
+    - nsupdate
   file:
     path: "{{ nginx_enabled }}/default"
     state: absent
 
 - name: Enable our nginx configuration
+  tags:
+    - nsupdate
   file:
     src: "{{ nginx_available }}/nsupdate_web"
     dest: "{{ nginx_enabled }}/nsupdate_web.conf"
     state: link
 
 - name: Enable and restart nginx
+  tags:
+    - nsupdate
   service:
     name: nginx
     enabled: true

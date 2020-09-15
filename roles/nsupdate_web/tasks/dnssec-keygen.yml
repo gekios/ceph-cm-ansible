@@ -1,0 +1,48 @@
+- name: Check existence and permissions of keys dir
+  file:
+    path: "{{ keys_dir }}"
+    state: directory
+    owner: "{{ nsupdate_web_user }}"
+    group: "{{ nsupdate_web_user }}"
+    mode: '0750'
+  become: true
+  tags:
+    - dnssec_keygen
+
+- name: Generate key
+  shell: "dnssec-keygen -a HMAC-MD5 -b 512 -n HOST '{{ zone_name }}'"
+  args:
+    chdir: "{{ keys_dir }}"
+      #    creates:
+      #      - "K{{ zone_name }}.key"
+      #      - "K{{ zone_name }}.private"
+  become_user: "{{ nsupdate_web_user }}"
+  register:
+    dns_keygen
+  tags:
+    - dnssec_keygen
+
+- name: Get key secret
+  shell: "grep 'Key:' {{ keys_dir }}/{{ dns_keygen.stdout }}.*.private | cut -d ' ' -f 2"
+  args:
+    executable: /bin/bash
+    chdir: "{{ keys_dir }}"
+  with_items: "{{ zone_domain }}"
+  register:
+    zone_secret
+  tags:
+    - dnssec_keygen
+
+- name: Set key vars
+  set_fact:
+    dns_key: "{{ dns_keygen.stdout }}"
+    pubkey_name: "{{ dns_keygen.stdout }}.key"
+    prikey_name: "{{ dns_keygen.stdout }}.private"
+  tags:
+    - dnssec_keygen
+
+- debug:
+    msg:
+    - "DNS key is  '{{ dns_key }}'"
+    - "pubkey key is  '{{ pubkey_name }}'"
+    - "prikey key is  '{{ prikey_name }}'"
